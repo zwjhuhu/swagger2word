@@ -69,12 +69,12 @@
     </div>
     <div th:each="tableMap:${tableMap}" style="margin-bottom:20px;">
         <!--这个是类的说明-->
-        <h4 class="first_title" th:text="${tableMap.key}"></h4>
+        <h1 class="first_title" th:text="${tableMap.key}"></h1>
         <div th:each="table,tableStat:${tableMap.value}">
 
             <!--这个是每个请求的说明，方便生成文档后进行整理-->
             <br th:if="${tableStat.index != 0}">
-            <h5 class="second_title" th:text="${tableStat.count} + '）' + ${table.tag}"></h5>
+            <h2 class="second_title" th:text="${tableStat.count} + '）' + ${table.tag}"></h2>
 
             <table border="1" cellspacing="0" cellpadding="0" width="100%">
                 <tr class="bg">

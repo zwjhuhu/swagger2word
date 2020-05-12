@@ -34,6 +34,11 @@ public class Request implements Serializable{
      * 说明
      */
     private String remark;
+    
+    /**
+     * 示例
+     */
+    private String example;
 
     /**
      * 复杂对象引用
