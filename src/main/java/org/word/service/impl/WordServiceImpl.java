@@ -13,6 +13,7 @@ import java.util.TreeMap;
 import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.CollectionUtils;
@@ -46,7 +47,7 @@ public class WordServiceImpl implements WordService {
         Map<String, Object> resultMap = new HashMap<>();
         try {
             String jsonStr = restTemplate.getForObject(swaggerUrl, String.class);
-            resultMap=tableListFromString(jsonStr);
+            resultMap = tableListFromString(jsonStr);
             log.debug(JsonUtils.writeJsonStr(resultMap));
         } catch (Exception e) {
             log.error("parse error", e);
@@ -60,7 +61,8 @@ public class WordServiceImpl implements WordService {
         List<Table> result = new ArrayList<>();
         try {
             Map<String, Object> map = getResultFromString(result, jsonStr);
-            Map<String, List<Table>> tableMap = result.stream().parallel().collect(Collectors.groupingBy(Table::getTitle));
+            Map<String, List<Table>> tableMap =
+                result.stream().parallel().collect(Collectors.groupingBy(Table::getTitle));
             resultMap.put("tableMap", new TreeMap<>(tableMap));
             resultMap.put("info", map.get("info"));
 
@@ -77,7 +79,7 @@ public class WordServiceImpl implements WordService {
         List<Table> result = new ArrayList<>();
         try {
             String jsonStr = new String(jsonFile.getBytes());
-            resultMap=tableListFromString(jsonStr);
+            resultMap = tableListFromString(jsonStr);
             log.debug(JsonUtils.writeJsonStr(resultMap));
         } catch (Exception e) {
             log.error("parse error", e);
@@ -89,11 +91,11 @@ public class WordServiceImpl implements WordService {
         // convert JSON string to Map
         Map<String, Object> map = JsonUtils.readValue(jsonStr, HashMap.class);
 
-        //解析model
+        // 解析model
         Map<String, ModelAttr> definitinMap = parseDefinitions(map);
 
-        //解析paths
-        Map<String, Map<String, Object>> paths = (Map<String, Map<String, Object>>) map.get("paths");
+        // 解析paths
+        Map<String, Map<String, Object>> paths = (Map<String, Map<String, Object>>)map.get("paths");
         if (paths != null) {
             Iterator<Entry<String, Map<String, Object>>> it = paths.entrySet().iterator();
             while (it.hasNext()) {
@@ -108,10 +110,10 @@ public class WordServiceImpl implements WordService {
 
                 // 3. 不管有几种请求方式，都只解析第一种
                 Entry<String, Object> firstRequest = it2.next();
-                Map<String, Object> content = (Map<String, Object>) firstRequest.getValue();
+                Map<String, Object> content = (Map<String, Object>)firstRequest.getValue();
 
                 // 4. 大标题（类说明）
-                String title = String.valueOf(((List) content.get("tags")).get(0));
+                String title = String.valueOf(((List)content.get("tags")).get(0));
 
                 // 5.小标题 （方法说明）
                 String tag = String.valueOf(content.get("summary"));
@@ -121,27 +123,27 @@ public class WordServiceImpl implements WordService {
 
                 // 7.请求参数格式，类似于 multipart/form-data
                 String requestForm = "";
-                List<String> consumes = (List) content.get("consumes");
+                List<String> consumes = (List)content.get("consumes");
                 if (consumes != null && consumes.size() > 0) {
-//                    requestForm = StringUtils.join(consumes, ",");
+                    // requestForm = StringUtils.join(consumes, ",");
                     requestForm = consumes.get(0);
                 }
 
                 // 8.返回参数格式，类似于 application/json
                 String responseForm = "";
-                List<String> produces = (List) content.get("produces");
+                List<String> produces = (List)content.get("produces");
                 if (produces != null && produces.size() > 0) {
-//                    responseForm = StringUtils.join(produces, ",");
+                    // responseForm = StringUtils.join(produces, ",");
                     responseForm = produces.get(0);
                 }
 
                 // 9. 请求体
-                List<LinkedHashMap> parameters = (ArrayList) content.get("parameters");
+                List<LinkedHashMap> parameters = (ArrayList)content.get("parameters");
 
                 // 10.返回体
-                Map<String, Object> responses = (LinkedHashMap) content.get("responses");
+                Map<String, Object> responses = (LinkedHashMap)content.get("responses");
 
-                //封装Table
+                // 封装Table
                 Table table = new Table();
 
                 table.setTitle(title);
@@ -155,12 +157,12 @@ public class WordServiceImpl implements WordService {
                 table.setResponseList(processResponseCodeList(responses));
 
                 // 取出来状态是200时的返回值
-                Map<String, Object> obj = (Map<String, Object>) responses.get("200");
+                Map<String, Object> obj = (Map<String, Object>)responses.get("200");
                 if (obj != null && obj.get("schema") != null) {
                     table.setModelAttr(processResponseModelAttrs(obj, definitinMap));
                 }
 
-                //示例
+                // 示例
                 table.setRequestParam(processRequestParam(table.getRequestList()));
                 table.setResponseParam(processResponseParam(obj, definitinMap));
 
@@ -181,6 +183,9 @@ public class WordServiceImpl implements WordService {
         List<Request> requestList = new ArrayList<>();
         if (!CollectionUtils.isEmpty(parameters)) {
             for (Map<String, Object> param : parameters) {
+                if (param.get("description") == null || StringUtils.isBlank(param.get("description").toString())) {
+                    continue;
+                }
                 Object in = param.get("in");
                 Request request = new Request();
                 request.setName(String.valueOf(param.get("name")));
@@ -191,38 +196,57 @@ public class WordServiceImpl implements WordService {
                 request.setParamType(String.valueOf(in));
                 // 考虑对象参数类型
                 if (in != null && "body".equals(in)) {
-                    Map<String, Object> schema = (Map) param.get("schema");
+                    Map<String, Object> schema = (Map)param.get("schema");
                     Object ref = schema.get("$ref");
                     // 数组情况另外处理
                     if (schema.get("type") != null && "array".equals(schema.get("type"))) {
-                        ref = ((Map) schema.get("items")).get("$ref");
+                        ref = ((Map)schema.get("items")).get("$ref");
                         request.setType("array");
                     }
                     if (ref != null) {
                         request.setType(request.getType() + ":" + ref.toString().replaceAll("#/definitions/", ""));
-                        request.setModelAttr(definitinMap.get(ref));
+
+                        ModelAttr modelAttr = new ModelAttr();
+                        ModelAttr origin = definitinMap.get(ref);
+                        if (origin != null) {
+                            BeanUtils.copyProperties(origin, modelAttr, "properties");
+
+                            List<ModelAttr> props = new ArrayList<>();
+                            if (origin.getProperties() != null) {
+                                for (ModelAttr sub : origin.getProperties()) {
+                                    if (sub.getDescription() == null || StringUtils.isBlank(sub.getDescription())) {
+                                        continue;
+                                    }
+                                    props.add(sub);
+                                }
+                            }
+                            modelAttr.setProperties(props);
+                            request.setModelAttr(modelAttr);
+                        } else {
+                            request.setModelAttr(origin);
+                        }
                     }
-                }else {
+                } else {
                     // 如果其他参数形式中有array，处理下基本类型的
                     if ("array".equals(request.getType())) {
                         Object obj = param.get("items");
-                        if(obj!=null) {
+                        if (obj != null) {
                             String itemType = (String)((Map)obj).get("type");
-                            if(itemType!=null) {
-                                request.setType("array:"+itemType);
+                            if (itemType != null) {
+                                request.setType("array:" + itemType);
                             }
                         }
                     }
-                    
+
                 }
                 // 是否必填
                 request.setRequire(false);
                 if (param.get("required") != null) {
-                    request.setRequire((Boolean) param.get("required"));
+                    request.setRequire((Boolean)param.get("required"));
                 }
                 // 参数例子
-                if(param.get("x-example")!=null) {
-                    request.setExample(param.get("x-example").toString()); 
+                if (param.get("x-example") != null) {
+                    request.setExample(param.get("x-example").toString());
                 }
                 // 参数说明
                 request.setRemark(String.valueOf(param.get("description")));
@@ -232,11 +256,11 @@ public class WordServiceImpl implements WordService {
         return requestList;
     }
 
-
     /**
      * 处理返回码列表
      *
-     * @param responses 全部状态码返回对象
+     * @param responses
+     *            全部状态码返回对象
      * @return
      */
     private List<Response> processResponseCodeList(Map<String, Object> responses) {
@@ -246,15 +270,15 @@ public class WordServiceImpl implements WordService {
             Map.Entry<String, Object> entry = resIt.next();
             Response response = new Response();
             // 状态码 200 201 401 403 404 这样
-            if(!entry.getKey().equals("200")) {
+            if (!entry.getKey().equals("200")) {
                 continue;
             }
             response.setName(entry.getKey());
-            LinkedHashMap<String, Object> statusCodeInfo = (LinkedHashMap) entry.getValue();
+            LinkedHashMap<String, Object> statusCodeInfo = (LinkedHashMap)entry.getValue();
             response.setDescription(String.valueOf(statusCodeInfo.get("description")));
             Object schema = statusCodeInfo.get("schema");
             if (schema != null) {
-                Object originalRef = ((LinkedHashMap) schema).get("originalRef");
+                Object originalRef = ((LinkedHashMap)schema).get("originalRef");
                 response.setRemark(originalRef == null ? "" : originalRef.toString());
             }
             responseList.add(response);
@@ -270,29 +294,58 @@ public class WordServiceImpl implements WordService {
      * @return
      */
     private ModelAttr processResponseModelAttrs(Map<String, Object> responseObj, Map<String, ModelAttr> definitinMap) {
-        Map<String, Object> schema = (Map<String, Object>) responseObj.get("schema");
-        String type = (String) schema.get("type");
+        Map<String, Object> schema = (Map<String, Object>)responseObj.get("schema");
+        String type = (String)schema.get("type");
         String ref = null;
-        //数组
+        // 数组
         if ("array".equals(type)) {
-            Map<String, Object> items = (Map<String, Object>) schema.get("items");
+            Map<String, Object> items = (Map<String, Object>)schema.get("items");
             if (items != null && items.get("$ref") != null) {
-                ref = (String) items.get("$ref");
+                ref = (String)items.get("$ref");
             }
         }
-        //对象
+        // 对象
         if (schema.get("$ref") != null) {
-            ref = (String) schema.get("$ref");
+            ref = (String)schema.get("$ref");
         }
 
-        //其他类型
+        // 其他类型
         ModelAttr modelAttr = new ModelAttr();
         modelAttr.setType(StringUtils.defaultIfBlank(type, StringUtils.EMPTY));
 
         if (StringUtils.isNotBlank(ref) && definitinMap.get(ref) != null) {
-            modelAttr = definitinMap.get(ref);
+            modelAttr = new ModelAttr();
+            ModelAttr origin = definitinMap.get(ref);
+            BeanUtils.copyProperties(origin, modelAttr, "properties");
+            List<ModelAttr> props = new ArrayList<>();
+            if (origin.getProperties() != null) {
+                for (ModelAttr sub : origin.getProperties()) {
+                    if (sub.getDescription() == null || StringUtils.isBlank(sub.getDescription())) {
+                        continue;
+                    }
+                    props.add(recursiveProps(sub));
+                }
+            }
+            modelAttr.setProperties(props);
         }
         return modelAttr;
+    }
+    
+    private ModelAttr recursiveProps(ModelAttr origin) {
+        ModelAttr modelAttr = new ModelAttr();
+        BeanUtils.copyProperties(origin, modelAttr, "properties");
+        List<ModelAttr> props = new ArrayList<>();
+        if (origin.getProperties() != null) {
+            for (ModelAttr sub : origin.getProperties()) {
+                if (sub.getDescription() == null || StringUtils.isBlank(sub.getDescription())) {
+                    continue;
+                }
+                props.add(recursiveProps(sub));
+            }
+        }
+        modelAttr.setProperties(props);
+        return modelAttr;
+        
     }
 
     /**
@@ -302,7 +355,7 @@ public class WordServiceImpl implements WordService {
      * @return
      */
     private Map<String, ModelAttr> parseDefinitions(Map<String, Object> map) {
-        Map<String, Map<String, Object>> definitions = (Map<String, Map<String, Object>>) map.get("definitions");
+        Map<String, Map<String, Object>> definitions = (Map<String, Map<String, Object>>)map.get("definitions");
         Map<String, ModelAttr> definitinMap = new HashMap<>(256);
         if (definitions != null) {
             Iterator<String> modelNameIt = definitions.keySet().iterator();
@@ -315,10 +368,10 @@ public class WordServiceImpl implements WordService {
     }
 
     /**
-     * 递归生成ModelAttr
-     * 对$ref类型设置具体属性
+     * 递归生成ModelAttr 对$ref类型设置具体属性
      */
-    private ModelAttr getAndPutModelAttr(Map<String, Map<String, Object>> swaggerMap, Map<String, ModelAttr> resMap, String modeName) {
+    private ModelAttr getAndPutModelAttr(Map<String, Map<String, Object>> swaggerMap, Map<String, ModelAttr> resMap,
+        String modeName) {
         ModelAttr modeAttr;
         if ((modeAttr = resMap.get("#/definitions/" + modeName)) == null) {
             modeAttr = new ModelAttr();
@@ -326,20 +379,20 @@ public class WordServiceImpl implements WordService {
         } else if (modeAttr.isCompleted()) {
             return resMap.get("#/definitions/" + modeName);
         }
-        Map<String, Object> modeProperties = (Map<String, Object>) swaggerMap.get(modeName).get("properties");
+        Map<String, Object> modeProperties = (Map<String, Object>)swaggerMap.get(modeName).get("properties");
         if (modeProperties == null) {
             return null;
         }
         Iterator<Entry<String, Object>> mIt = modeProperties.entrySet().iterator();
 
         List<ModelAttr> attrList = new ArrayList<>();
-        //解析属性
+        // 解析属性
         while (mIt.hasNext()) {
             Entry<String, Object> mEntry = mIt.next();
-            Map<String, Object> attrInfoMap = (Map<String, Object>) mEntry.getValue();
+            Map<String, Object> attrInfoMap = (Map<String, Object>)mEntry.getValue();
             ModelAttr child = new ModelAttr();
             child.setName(mEntry.getKey());
-            child.setType((String) attrInfoMap.get("type"));
+            child.setType((String)attrInfoMap.get("type"));
             if (attrInfoMap.get("format") != null) {
                 child.setType(child.getType() + "(" + attrInfoMap.get("format") + ")");
             }
@@ -347,9 +400,9 @@ public class WordServiceImpl implements WordService {
 
             Object ref = attrInfoMap.get("$ref");
             Object items = attrInfoMap.get("items");
-            if (ref != null || (items != null && (ref = ((Map) items).get("$ref")) != null)) {
+            if (ref != null || (items != null && (ref = ((Map)items).get("$ref")) != null)) {
                 String refName = ref.toString();
-                //截取 #/definitions/ 后面的
+                // 截取 #/definitions/ 后面的
                 String clsName = refName.substring(14);
                 modeAttr.setCompleted(true);
                 ModelAttr refModel = getAndPutModelAttr(swaggerMap, resMap, clsName);
@@ -358,7 +411,7 @@ public class WordServiceImpl implements WordService {
                 }
                 child.setType(child.getType() + ":" + clsName);
             }
-            child.setDescription((String) attrInfoMap.get("description"));
+            child.setDescription((String)attrInfoMap.get("description"));
             attrList.add(child);
         }
         Object title = swaggerMap.get(modeName).get("title");
@@ -375,28 +428,29 @@ public class WordServiceImpl implements WordService {
      * @param responseObj
      * @return
      */
-    private String processResponseParam(Map<String, Object> responseObj, Map<String, ModelAttr> definitinMap) throws JsonProcessingException {
+    private String processResponseParam(Map<String, Object> responseObj, Map<String, ModelAttr> definitinMap)
+        throws JsonProcessingException {
         if (responseObj != null && responseObj.get("schema") != null) {
-            Map<String, Object> schema = (Map<String, Object>) responseObj.get("schema");
-            String type = (String) schema.get("type");
+            Map<String, Object> schema = (Map<String, Object>)responseObj.get("schema");
+            String type = (String)schema.get("type");
             String ref = null;
             // 数组
             if ("array".equals(type)) {
-                Map<String, Object> items = (Map<String, Object>) schema.get("items");
+                Map<String, Object> items = (Map<String, Object>)schema.get("items");
                 if (items != null && items.get("$ref") != null) {
-                    ref = (String) items.get("$ref");
+                    ref = (String)items.get("$ref");
                 }
             }
             // 对象
             if (schema.get("$ref") != null) {
-                ref = (String) schema.get("$ref");
+                ref = (String)schema.get("$ref");
             }
             if (StringUtils.isNotEmpty(ref)) {
                 ModelAttr modelAttr = definitinMap.get(ref);
                 if (modelAttr != null && !CollectionUtils.isEmpty(modelAttr.getProperties())) {
                     Map<String, Object> responseMap = new HashMap<>(8);
                     for (ModelAttr subModelAttr : modelAttr.getProperties()) {
-                        responseMap.put(subModelAttr.getName(), getValue(subModelAttr.getType(), null,subModelAttr));
+                        responseMap.put(subModelAttr.getName(), getValue(subModelAttr.getType(), null, subModelAttr));
                     }
                     return JsonUtils.writeJsonStr(responseMap);
                 }
@@ -414,14 +468,14 @@ public class WordServiceImpl implements WordService {
     private String processRequestParam(List<Request> list) throws IOException {
         Map<String, Object> headerMap = new LinkedHashMap<>();
         Map<String, Object> queryMap = new LinkedHashMap<>();
-        Map<String,Object> formMap = new LinkedHashMap<>();
+        Map<String, Object> formMap = new LinkedHashMap<>();
         Map<String, Object> jsonMap = new LinkedHashMap<>();
         if (list != null && list.size() > 0) {
             for (Request request : list) {
                 String name = request.getName();
                 String paramType = request.getParamType();
                 String example = request.getExample();
-                Object value = getValue(request.getType(), example,request.getModelAttr());
+                Object value = getValue(request.getType(), example, request.getModelAttr());
                 switch (paramType) {
                     case "header":
                         headerMap.put(name, value);
@@ -433,7 +487,7 @@ public class WordServiceImpl implements WordService {
                         formMap.put(name, value);
                         break;
                     case "body":
-                        //TODO 根据content-type序列化成不同格式，目前只用了json
+                        // TODO 根据content-type序列化成不同格式，目前只用了json
                         jsonMap.put(name, value);
                         break;
                     default:
@@ -457,32 +511,32 @@ public class WordServiceImpl implements WordService {
             } else {
                 res += " -d '" + JsonUtils.writeJsonStr(jsonMap) + "'";
             }
-        }else if(!formMap.isEmpty()) {
+        } else if (!formMap.isEmpty()) {
             // 如果有上传文件需要特殊处理
             boolean needFile = false;
-            for(String name:formMap.keySet()) {
+            for (String name : formMap.keySet()) {
                 Object val = formMap.get(name);
-                if(val instanceof List) {
+                if (val instanceof List) {
                     val = ((List)val).get(0);
                 }
-                if(val!=null&&val.equals("(binary)")) {
+                if (val != null && val.equals("(binary)")) {
                     needFile = true;
                     break;
                 }
             }
-            if(needFile) {
-                for(String name:formMap.keySet()) {
+            if (needFile) {
+                for (String name : formMap.keySet()) {
                     Object val = formMap.get(name);
-                    if(val instanceof List) {
+                    if (val instanceof List) {
                         val = ((List)val).get(0);
                     }
-                    if(val!=null&&val.equals("(binary)")) {
+                    if (val != null && val.equals("(binary)")) {
                         res += " -F '" + name + "=@file'";
-                    }else {
-                        res += " -F '" + name + "="+urlEncodeParam(val) +"'";
+                    } else {
+                        res += " -F '" + name + "=" + urlEncodeParam(val) + "'";
                     }
                 }
-            }else {
+            } else {
                 res += " -d '" + getUrlParamsByMap(formMap) + "'";
             }
         }
@@ -492,21 +546,24 @@ public class WordServiceImpl implements WordService {
     /**
      * 例子中，字段的默认值
      *
-     * @param type      类型
-     * @param example 示例
-     * @param modelAttr 引用的类型
+     * @param type
+     *            类型
+     * @param example
+     *            示例
+     * @param modelAttr
+     *            引用的类型
      * @return
      */
     private Object getValue(String type, String example, ModelAttr modelAttr) {
         int pos = -1;
         String itemType = "";
         if ((pos = type.indexOf(":")) != -1) {
-            itemType = type.substring(pos+1);
+            itemType = type.substring(pos + 1);
             type = type.substring(0, pos);
         }
         switch (type) {
             case "string":
-                return example!=null?example:"string";
+                return example != null ? example : "string";
             case "string(date-time)":
                 return "2020/01/01 00:00:00";
             case "integer":
@@ -524,18 +581,18 @@ public class WordServiceImpl implements WordService {
                 Map<String, Object> map = new LinkedHashMap<>();
                 if (modelAttr != null && !CollectionUtils.isEmpty(modelAttr.getProperties())) {
                     for (ModelAttr subModelAttr : modelAttr.getProperties()) {
-                        map.put(subModelAttr.getName(), getValue(subModelAttr.getType(), null,subModelAttr));
+                        map.put(subModelAttr.getName(), getValue(subModelAttr.getType(), null, subModelAttr));
                     }
                     list.add(map);
-                }else if(itemType.length()>0) {
-                    list.add(getValue(itemType, null, null)); 
+                } else if (itemType.length() > 0) {
+                    list.add(getValue(itemType, null, null));
                 }
                 return list;
             case "object":
                 map = new LinkedHashMap<>();
                 if (modelAttr != null && !CollectionUtils.isEmpty(modelAttr.getProperties())) {
                     for (ModelAttr subModelAttr : modelAttr.getProperties()) {
-                        map.put(subModelAttr.getName(), getValue(subModelAttr.getType(), null,subModelAttr));
+                        map.put(subModelAttr.getName(), getValue(subModelAttr.getType(), null, subModelAttr));
                     }
                 }
                 return map;
@@ -562,23 +619,23 @@ public class WordServiceImpl implements WordService {
         }
         return s;
     }
-    
+
     public static String urlEncodeParam(Object param) {
         String ret = "";
         try {
-            if(param!=null) {
+            if (param != null) {
                 String val = "";
-                if(param instanceof List) {
+                if (param instanceof List) {
                     val = ((List)param).get(0).toString();
-                }else {
+                } else {
                     val = param.toString();
                 }
-                ret = URLEncoder.encode(val,"utf-8");
+                ret = URLEncoder.encode(val, "utf-8");
             }
-        }catch (Exception e) {
-            //ignore
+        } catch (Exception e) {
+            // ignore
         }
-        
+
         return ret;
     }
 
